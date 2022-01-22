@@ -51,20 +51,21 @@ func loadConfig() config.JenkinsConfigurations {
 	}
 
 	save := false
+	var jenkinsUrl string
+	var user string
+	var api string
 	if configuration.JenkinsURL == "" {
 		fmt.Println("Please enter your Jenkins URL")
-		var url string
-		fmt.Scanln(&url)
-		if !strings.HasSuffix(url, "/") {
-			url += "/"
+		fmt.Scanln(&jenkinsUrl)
+		if !strings.HasSuffix(jenkinsUrl, "/") {
+			jenkinsUrl += "/"
 		}
-		viper.Set("JenkinsUrl", url)
+		viper.Set("JenkinsUrl", jenkinsUrl)
 		save = true
 	}
 
 	if configuration.JenkinsUser == "" {
 		fmt.Println("Please enter your Jenkins username")
-		var user string
 		fmt.Scanln(&user)
 		viper.Set("JenkinsUser", user)
 		save = true
@@ -72,7 +73,7 @@ func loadConfig() config.JenkinsConfigurations {
 
 	if configuration.JenkinsAPI == "" {
 		fmt.Println("Please enter your Jenkins API token")
-		var api string
+		fmt.Printf("Generate here: %suser/%s/configure\n", jenkinsUrl, user)
 		fmt.Scanln(&api)
 		viper.Set("JenkinsAPI", api)
 		save = true
@@ -187,7 +188,9 @@ func add(c *cli.Context) {
 	}
 
 	formattedUrl := c.Args()[1]
-
+	if strings.HasPrefix(c.Args()[1], "/") {
+		formattedUrl = formattedUrl[1:]
+	}
 	if !strings.HasSuffix(c.Args()[1], "/") {
 		formattedUrl += "/"
 	}
