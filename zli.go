@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/manifoldco/promptui"
@@ -28,7 +29,7 @@ func info() {
 	app.Name = "ZLI"
 	app.Usage = "A CLI for Jenkins heavy workflow"
 	app.Author = "lincolnh0"
-	app.Version = "0.1.0"
+	app.Version = "0.2.0"
 }
 
 // Load config file content to config object.
@@ -111,7 +112,7 @@ func commands() {
 		{
 			Name:      "deploy",
 			Aliases:   []string{"d"},
-			Usage:     "Deploy a site with its Jenkins job.",
+			Usage:     "Deploy a site with its Jenkins job",
 			ArgsUsage: "[site alias]",
 			Action:    deploy,
 		},
@@ -135,26 +136,23 @@ func commands() {
 			ArgsUsage: "[site alias]",
 			Action:    remove,
 		},
+		{
+			Name:      "status",
+			Aliases:   []string{"s"},
+			Usage:     "Display the status of a build for a job, defaults to latest",
+			ArgsUsage: "[site alias] [build number]",
+			Action:    status,
+		},
 	}
 }
 
 // Deploy job by alias.
 func deploy(c *cli.Context) {
-	if len(c.Args()) < 1 {
-		log.Fatalln("Please enter a site alias.")
-	}
-	siteAlias := c.Args()[0]
-	var site config.JenkinsJob
-	for _, job := range configuration.Jobs {
-		if siteAlias == job.Alias {
-			site = job
-			break
-		}
+	site, err := getJobFromAlias(c.Args())
+	if err != nil {
+		log.Fatalln(err)
 	}
 
-	if site.Alias == "" || site.URL == "" {
-		log.Fatalf("Site alias %s cannot be found\n", siteAlias)
-	}
 	parameters := getJobParameters(loadConfig(), site)
 	var drushCommands []string
 	if len(parameters) > 0 {
@@ -194,7 +192,7 @@ func add(c *cli.Context) {
 	if !strings.HasSuffix(c.Args()[1], "/") {
 		formattedUrl += "/"
 	}
-	jobUrl := configuration.JenkinsURL + formattedUrl + "api/json"
+	jobUrl := formattedUrl + "api/json"
 
 	// Perform a basic get to validate URL.
 	response := getFromJenkins(configuration, jobUrl)
@@ -227,14 +225,14 @@ func add(c *cli.Context) {
 // Remove existing alias.
 func remove(c *cli.Context) {
 
-	if len(c.Args()) != 1 {
-		log.Fatalln("Please enter an alias as argument")
+	site, err := getJobFromAlias(c.Args())
+	if err != nil {
+		log.Fatalln(err)
 	}
 
-	siteAlias := c.Args()[0]
 	removed := false
 	for index, job := range configuration.Jobs {
-		if siteAlias == job.Alias {
+		if site == job {
 			newJobsList := append(configuration.Jobs[:index], configuration.Jobs[index+1:]...)
 			sort.Slice(newJobsList, func(i, j int) bool {
 				return newJobsList[i].Alias < newJobsList[j].Alias
@@ -247,16 +245,62 @@ func remove(c *cli.Context) {
 	}
 
 	if removed {
-		fmt.Printf("%s has been removed\n", siteAlias)
+		fmt.Printf("%s has been removed\n", site.Alias)
 	} else {
-		log.Fatalf("%s cannt be found\n", siteAlias)
+		log.Fatalf("%s cannt be found\n", site.Alias)
 	}
 
 }
 
+// Get the status of the latest build.
+func status(c *cli.Context) {
+	site, err := getJobFromAlias(c.Args())
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	buildNumber := "lastBuild"
+	if len(c.Args()) > 1 {
+		buildNumber = c.Args()[1]
+	}
+
+	buildUrl := site.URL + buildNumber + "/api/json?tree=fullDisplayName,id,building,result,url"
+	response := getFromJenkins(configuration, buildUrl)
+
+	var result map[string]interface{}
+
+	err = json.Unmarshal(response, &result)
+	if err != nil {
+		log.Fatalln("Error when decoding build status", err)
+	}
+
+	fmt.Printf("Status for \"%s\"\n", result["fullDisplayName"])
+	for key, val := range result {
+		if key != "_class" && key != "fullDisplayName" {
+			fmt.Printf("%s: %v\n", strings.Title(key), val)
+		}
+	}
+
+}
+
+// Helper function to extract Jenkins job object from command line arguments.
+func getJobFromAlias(args []string) (config.JenkinsJob, error) {
+	if len(args) < 1 {
+		log.Fatalln("Please enter an alias as argument")
+	}
+	siteAlias := args[0]
+	for _, job := range configuration.Jobs {
+		if siteAlias == job.Alias {
+			return job, nil
+		}
+	}
+
+	return config.JenkinsJob{}, errors.New(siteAlias + ": alias cannot be found")
+}
+
 // Retrieve jenkins job parameter.
 func getJobParameters(configuration config.JenkinsConfigurations, job config.JenkinsJob) []string {
-	jobUrl := configuration.JenkinsURL + job.URL + "api/json?tree=property[parameterDefinitions[name,description,type]]"
+	jobUrl := job.URL + "api/json?tree=property[parameterDefinitions[name,description,type]]"
 	response := getFromJenkins(configuration, jobUrl)
 	var options []string
 	var result map[string]interface{}
@@ -282,7 +326,8 @@ func getJobParameters(configuration config.JenkinsConfigurations, job config.Jen
 
 // Generic request handler for Jenkins GET requests.
 func getFromJenkins(configuration config.JenkinsConfigurations, endpoint string) []byte {
-	req, err := http.NewRequest("GET", endpoint, nil)
+	fullUrl := configuration.JenkinsURL + endpoint
+	req, err := http.NewRequest("GET", fullUrl, nil)
 	req.SetBasicAuth(configuration.JenkinsUser, configuration.JenkinsAPI)
 	req.Header.Set("Accept", "application/json")
 	if err != nil {
@@ -306,7 +351,7 @@ func getFromJenkins(configuration config.JenkinsConfigurations, endpoint string)
 
 // Post request to job build page.
 func deployWithParameters(configuration config.JenkinsConfigurations, job config.JenkinsJob, parameters []string) (bool, string) {
-	jobUrl := configuration.JenkinsURL + job.URL + "buildWithParameters"
+	jobUrl := job.URL + "buildWithParameters"
 	data := url.Values{}
 	for _, item := range parameters {
 		data.Add(item, "true")
