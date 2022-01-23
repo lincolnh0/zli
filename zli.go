@@ -154,13 +154,13 @@ func deploy(c *cli.Context) {
 	}
 
 	parameters := getJobParameters(loadConfig(), site)
-	var drushCommands []string
+	var buildParameters []string
 	if len(parameters) > 0 {
-		drushCommands = checkboxes("Select deploy parameters", parameters)
+		buildParameters = checkboxes("Select deploy parameters", parameters)
 	}
-	fmt.Println("This will deploy", site.Alias, "with parameters", drushCommands)
+	fmt.Println("This will deploy", site.Alias, "with parameters", buildParameters)
 	if yesNo() {
-		success, status := deployWithParameters(configuration, site, drushCommands)
+		success, status := deployWithParameters(configuration, site, buildParameters)
 		if success {
 			fmt.Printf("%s deployed successfully", site.Alias)
 		} else {
@@ -186,6 +186,9 @@ func add(c *cli.Context) {
 	}
 
 	formattedUrl := c.Args()[1]
+	if strings.Contains(formattedUrl, configuration.JenkinsURL) {
+		formattedUrl = strings.Replace(formattedUrl, configuration.JenkinsURL, "", 1)
+	}
 	if strings.HasPrefix(c.Args()[1], "/") {
 		formattedUrl = formattedUrl[1:]
 	}
@@ -218,7 +221,7 @@ func add(c *cli.Context) {
 		}
 		return
 	}
-	log.Fatalln("Please double check your URL pattern. Only copy from the first /job onwards.")
+	log.Fatalln("Please double check your URL pattern.")
 
 }
 
