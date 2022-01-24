@@ -354,7 +354,7 @@ func getFromJenkins(configuration config.JenkinsConfigurations, endpoint string)
 
 // Post request to job build page.
 func deployWithParameters(configuration config.JenkinsConfigurations, job config.JenkinsJob, parameters []string) (bool, string) {
-	jobUrl := job.URL + "buildWithParameters"
+	jobUrl := configuration.JenkinsURL + job.URL + "buildWithParameters"
 	data := url.Values{}
 	for _, item := range parameters {
 		data.Add(item, "true")
@@ -365,10 +365,15 @@ func deployWithParameters(configuration config.JenkinsConfigurations, job config
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 
 	client := &http.Client{}
-	resp, _ := client.Do(req)
-	defer resp.Body.Close()
-	_, err := io.ReadAll(resp.Body)
+	resp, err := client.Do(req)
 
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	defer resp.Body.Close()
+
+	_, err = io.ReadAll(resp.Body)
 	if err != nil {
 		log.Fatalln(err)
 	}
