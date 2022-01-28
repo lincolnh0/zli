@@ -10,6 +10,7 @@ configuration file.
 - Install Go from [the official developer](https://go.dev/doc/install)
 - Clone this repository and `cd` into it
 - Run `go install`
+  - Go might place your executable under $GOPATH, if so, run `go env GOPATH` and then `sudo cp /path/of/GOENV/bin/zli /usr/local/`
 - Run `zli` and follow the set up process
 
 ### Building the project yourself
