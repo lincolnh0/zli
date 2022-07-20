@@ -29,7 +29,7 @@ func info() {
 	app.Name = "ZLI"
 	app.Usage = "A CLI for Jenkins heavy workflow"
 	app.Author = "lincolnh0"
-	app.Version = "0.2.0"
+	app.Version = "0.2.1"
 }
 
 // Load config file content to config object.
@@ -158,9 +158,11 @@ func deploy(c *cli.Context) {
 	if len(parameters) > 0 {
 		buildParameters = checkboxes("Select deploy parameters", parameters)
 	}
+	inactiveParameters := Difference(parameters, buildParameters)
+	
 	fmt.Println("This will deploy", site.Alias, "with parameters", buildParameters)
 	if yesNo() {
-		success, status := deployWithParameters(configuration, site, buildParameters)
+		success, status := deployWithParameters(configuration, site, buildParameters, inactiveParameters)
 		if success {
 			fmt.Printf("%s deployed successfully", site.Alias)
 		} else {
@@ -169,6 +171,22 @@ func deploy(c *cli.Context) {
 	} else {
 		fmt.Println("Deploy abandoned.")
 	}
+}
+
+// Set Difference: A - B
+func Difference(a, b []string) (diff []string) {
+	m := make(map[string]bool)
+
+	for _, item := range b {
+		m[item] = true
+	}
+
+	for _, item := range a {
+		if _, ok := m[item]; !ok {
+			diff = append(diff, item)
+		}
+	}
+	return
 }
 
 // List all aliases.
@@ -353,11 +371,14 @@ func getFromJenkins(configuration config.JenkinsConfigurations, endpoint string)
 }
 
 // Post request to job build page.
-func deployWithParameters(configuration config.JenkinsConfigurations, job config.JenkinsJob, parameters []string) (bool, string) {
+func deployWithParameters(configuration config.JenkinsConfigurations, job config.JenkinsJob, parameters []string, inactiveParameter []string) (bool, string) {
 	jobUrl := configuration.JenkinsURL + job.URL + "buildWithParameters"
 	data := url.Values{}
 	for _, item := range parameters {
 		data.Add(item, "true")
+	}
+	for _, item := range inactiveParameter {
+		data.Add(item, "false")
 	}
 
 	req, _ := http.NewRequest("POST", jobUrl, strings.NewReader(data.Encode()))
