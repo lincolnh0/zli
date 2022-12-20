@@ -31,7 +31,7 @@ func info() {
 	app.Name = "ZLI"
 	app.Usage = "A CLI for Jenkins heavy workflow"
 	app.Author = "lincolnh0"
-	app.Version = "0.2.1"
+	app.Version = "0.3.0"
 }
 
 // Load config file content to config object.
