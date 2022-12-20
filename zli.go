@@ -1,13 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/AlecAivazis/survey/v2"
-	"github.com/manifoldco/promptui"
-	"github.com/spf13/viper"
-	"github.com/urfave/cli"
 	"io"
 	"log"
 	"net/http"
@@ -16,6 +13,11 @@ import (
 	"sort"
 	"strings"
 	"zli/config"
+
+	"github.com/AlecAivazis/survey/v2"
+	"github.com/manifoldco/promptui"
+	"github.com/spf13/viper"
+	"github.com/urfave/cli"
 )
 
 var app = cli.NewApp()
@@ -154,15 +156,36 @@ func deploy(c *cli.Context) {
 	}
 
 	parameters := getJobParameters(loadConfig(), site)
-	var buildParameters []string
-	if len(parameters) > 0 {
-		buildParameters = checkboxes("Select deploy parameters", parameters)
+	buildParameters := make(map[string]string)
+
+	if len(parameters.BooleanParameters) > 0 {
+		active_boolean, negative_boolean := checkboxes("Select deploy parameters", parameters.BooleanParameters)
+		for _, active_boolean_key := range active_boolean {
+			buildParameters[active_boolean_key] = "true"
+		}
+		for _, negatgive_boolean_key := range negative_boolean {
+			buildParameters[negatgive_boolean_key] = "false"
+		}
 	}
-	inactiveParameters := Difference(parameters, buildParameters)
-	
-	fmt.Println("This will deploy", site.Alias, "with parameters", buildParameters)
+
+	if len(parameters.StringParameters) > 0 {
+		scanner := bufio.NewScanner(os.Stdin)
+		for _, string_parameter := range parameters.StringParameters {
+			fmt.Printf(string_parameter + ": ")
+			scanner.Scan()
+			buildParameters[string_parameter] = scanner.Text()
+		}
+	}
+
+	for choice_parameter, choice_maps := range parameters.ChoiceParameters {
+		choice_result := select_choice(choice_parameter, choice_maps)
+		buildParameters[choice_parameter] = choice_result
+	}
+
+	jsonString, _ := json.Marshal(buildParameters)
+	fmt.Println("This will deploy", site.Alias, "with parameters", string(jsonString))
 	if yesNo() {
-		success, status := deployWithParameters(configuration, site, buildParameters, inactiveParameters)
+		success, status := deployWithParameters(configuration, site, buildParameters)
 		if success {
 			fmt.Printf("%s deployed successfully", site.Alias)
 		} else {
@@ -320,10 +343,12 @@ func getJobFromAlias(args []string) (config.JenkinsJob, error) {
 }
 
 // Retrieve jenkins job parameter.
-func getJobParameters(configuration config.JenkinsConfigurations, job config.JenkinsJob) []string {
-	jobUrl := job.URL + "api/json?tree=property[parameterDefinitions[name,description,type]]"
+func getJobParameters(configuration config.JenkinsConfigurations, job config.JenkinsJob) config.JenkinsParameters {
+	jobUrl := job.URL + "api/json?tree=property[parameterDefinitions[name,description,type,choices]]"
 	response := getFromJenkins(configuration, jobUrl)
-	var options []string
+	var userParameters config.JenkinsParameters
+	userParameters.ChoiceParameters = make(map[string][]string)
+
 	var result map[string]interface{}
 
 	err := json.Unmarshal(response, &result)
@@ -333,15 +358,23 @@ func getJobParameters(configuration config.JenkinsConfigurations, job config.Jen
 	for _, val := range result["property"].([]interface{}) {
 		if parameters := val.(map[string]interface{})["parameterDefinitions"]; parameters != nil {
 			for _, parameter := range parameters.([]interface{}) {
-				if parameter.(map[string]interface{})["type"] == "BooleanParameterDefinition" {
-					parameterName := (parameter.(map[string]interface{})["name"]).(string)
-					options = append(options, parameterName)
+				parameterName := (parameter.(map[string]interface{})["name"]).(string)
+				switch parameter.(map[string]interface{})["type"] {
+				case "BooleanParameterDefinition":
+					userParameters.BooleanParameters = append(userParameters.BooleanParameters, parameterName)
+				case "StringParameterDefinition":
+					userParameters.StringParameters = append(userParameters.StringParameters, parameterName)
+				case "ChoiceParameterDefinition":
+					choices := parameter.(map[string]interface{})["choices"]
+					for _, choice_val := range choices.([]interface{}) {
+						userParameters.ChoiceParameters[parameterName] = append(userParameters.ChoiceParameters[parameterName], choice_val.(string))
+					}
 				}
 			}
 		}
 	}
 
-	return options
+	return userParameters
 
 }
 
@@ -371,14 +404,13 @@ func getFromJenkins(configuration config.JenkinsConfigurations, endpoint string)
 }
 
 // Post request to job build page.
-func deployWithParameters(configuration config.JenkinsConfigurations, job config.JenkinsJob, parameters []string, inactiveParameter []string) (bool, string) {
+func deployWithParameters(configuration config.JenkinsConfigurations, job config.JenkinsJob, parameters map[string]string) (bool, string) {
 	jobUrl := configuration.JenkinsURL + job.URL + "buildWithParameters"
 	data := url.Values{}
-	for _, item := range parameters {
-		data.Add(item, "true")
-	}
-	for _, item := range inactiveParameter {
-		data.Add(item, "false")
+	for parameter_name, parameter_value := range parameters {
+		if parameter_value != "" {
+			data.Add(parameter_name, parameter_value)
+		}
 	}
 
 	req, _ := http.NewRequest("POST", jobUrl, strings.NewReader(data.Encode()))
@@ -417,7 +449,7 @@ func yesNo() bool {
 }
 
 // Return strings of selected checkboxes.
-func checkboxes(label string, opts []string) []string {
+func checkboxes(label string, opts []string) ([]string, []string) {
 	var res []string
 	prompt := &survey.MultiSelect{
 		Message: label,
@@ -425,8 +457,21 @@ func checkboxes(label string, opts []string) []string {
 	}
 	err := survey.AskOne(prompt, &res)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 
-	return res
+	return res, Difference(opts, res)
+}
+
+// Get a result from multiple choice.
+func select_choice(label string, options []string) string {
+	prompt := promptui.Select{
+		Label: label,
+		Items: options,
+	}
+	_, result, err := prompt.Run()
+	if err != nil {
+		log.Fatalf("Prompt failed %v\n", err)
+	}
+	return result
 }
