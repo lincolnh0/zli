@@ -157,6 +157,7 @@ func deploy(c *cli.Context) {
 
 	parameters := getJobParameters(loadConfig(), site)
 	buildParameters := make(map[string]string)
+	buildParameters["delay"] = "0"
 
 	if len(parameters.BooleanParameters) > 0 {
 		active_boolean, negative_boolean := checkboxes("Select deploy parameters", parameters.BooleanParameters)
