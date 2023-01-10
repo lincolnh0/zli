@@ -17,6 +17,3 @@ configuration file.
 - Clone the repository
 - `cd` and run `go build zli.go`
 - You can then manage the executable yourself, `mv zli /usr/bin/zli` for example
-
-## Limitations
-- At the moment only boolean parameters can be customised directly on the terminal
