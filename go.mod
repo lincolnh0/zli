@@ -3,7 +3,7 @@ module zli
 go 1.17
 
 require (
-	github.com/AlecAivazis/survey/v2 v2.3.2
+	github.com/AlecAivazis/survey/v2 v2.3.6
 	github.com/manifoldco/promptui v0.9.0
 	github.com/spf13/viper v1.15.0
 	github.com/urfave/cli v1.22.5
