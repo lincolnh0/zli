@@ -227,6 +227,10 @@ func add(c *cli.Context) {
 		log.Fatalln("Please enter a site alias and the Jenkins job URL")
 	}
 
+    if site, err := getJobFromAlias(c.Args()); err == nil {
+        log.Fatalf("Alias '%s' already exists, pointing to '%s\n'", site.Alias, site.URL)
+    }
+
 	formattedUrl := c.Args()[1]
 	if strings.Contains(formattedUrl, configuration.JenkinsURL) {
 		formattedUrl = strings.Replace(formattedUrl, configuration.JenkinsURL, "", 1)
